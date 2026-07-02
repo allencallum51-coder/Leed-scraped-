@@ -1,11 +1,143 @@
 {
   "version": 1,
   "skills": {
+    "apollo-lead-finder": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/apollo-lead-finder/SKILL.md",
+      "computedHash": "ead62410978a527a84c54ed89b2183e2e65e204c555ae6d1034dc1bffb7bb701"
+    },
+    "casualize-names": {
+      "source": "aiagentwithdhruv/skills",
+      "sourceType": "github",
+      "skillPath": "casualize-names/SKILL.md",
+      "computedHash": "8bac42d7c7cf9f87c1ebddf5b9116c429890b9679a3015d31cb604e9ef5c3cd5"
+    },
+    "classify-leads": {
+      "source": "aiagentwithdhruv/skills",
+      "sourceType": "github",
+      "skillPath": "classify-leads/SKILL.md",
+      "computedHash": "82f1c3578038782a9cda4db9072b07c51f6e737cfb1be2659dd0e180b651972c"
+    },
+    "company-contact-finder": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/company-contact-finder/SKILL.md",
+      "computedHash": "b95f7c0792374d432bc055c2a81f8758c4b4d72d3732971b9d3da66f812f207d"
+    },
+    "comprehensive-enrichment": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/comprehensive-enrichment/SKILL.md",
+      "computedHash": "caee4e6fa64ae44c693594221a99fd64137ddf691fceee763ec4d525a5b49f63"
+    },
+    "contact-cache": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/contact-cache/SKILL.md",
+      "computedHash": "47be8958c8175509564c75e1bc07442ee734ef875044abc9c0d9210ce9d06355"
+    },
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "1c27b1774a4ec17ad4556a72e3c0168beab3af0183b2c1b8aa9e320af3ff41ce"
+    },
+    "gmaps-leads": {
+      "source": "aiagentwithdhruv/skills",
+      "sourceType": "github",
+      "skillPath": "gmaps-leads/SKILL.md",
+      "computedHash": "83c7427b7e92be6c49507148c5fe53c0f46c53f84ff2f929599dedfb32812e11"
+    },
+    "gtm-enrichment-smart": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/gtm-enrichment-smart/SKILL.md",
+      "computedHash": "2d19abdbc0f194ffd20c4975eebaa0ee0211f83f818bd39d3e258828d3173d51"
+    },
+    "icp-identification": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/icp-identification/SKILL.md",
+      "computedHash": "7d8fa33f3b78496ad839bb033122f7bfad7a5cf0cbf528c3b0b83a60629dfb7f"
+    },
+    "inbound-lead-enrichment": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/composites/inbound-lead-enrichment/SKILL.md",
+      "computedHash": "7d1858ccdb3a87b87b7434535850b4dabff6054fa466cd915e305d86f36c19df"
+    },
+    "job-scraper": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/job-scraper/SKILL.md",
+      "computedHash": "14ee089dabe7a06ec772533aa4e2ce2da8ba03dd80a50897a503738f064647b9"
+    },
+    "lead-qualification": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/lead-qualification/SKILL.md",
+      "computedHash": "6b1ebce37f53126a82bbb95d5c6c96b4b4a8f533b6e071cfb56b6aac73175bd2"
+    },
+    "scrape-leads": {
+      "source": "aiagentwithdhruv/skills",
+      "sourceType": "github",
+      "skillPath": "scrape-leads/SKILL.md",
+      "computedHash": "5ea5ba6a8b770bd31106d8c9b6ec09e1919f6a88d7be46998b9f3ad503a9e4ce"
+    },
+    "scraperapi-agent-onboarding": {
+      "source": "scraperapi/scraperapi-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scraperapi-agent-onboarding/SKILL.md",
+      "computedHash": "1e7f5cc32fb489562d477e630429117db97179ae411b4e6a142fb2b71a42786d"
+    },
+    "scraperapi-crawler": {
+      "source": "scraperapi/scraperapi-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scraperapi-crawler/SKILL.md",
+      "computedHash": "f643e71b0c9a1e84126c8341d133e2061aa5b63099959d07562c7eff5281cb0a"
+    },
+    "scraperapi-datapipeline": {
+      "source": "scraperapi/scraperapi-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scraperapi-datapipeline/SKILL.md",
+      "computedHash": "501b91f93e8448bff3e5a700bac1d0341ec3a4446d24848345c1111bd27e1054"
+    },
+    "scraperapi-lead-enrichment": {
+      "source": "scraperapi/scraperapi-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scraperapi-lead-enrichment/SKILL.md",
+      "computedHash": "6b243f7216efe1548e58c721fa5717a44f5a0939950f8d7c020b8e65f34ee5d9"
+    },
+    "scraperapi-mcp": {
+      "source": "scraperapi/scraperapi-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scraperapi-mcp/SKILL.md",
+      "computedHash": "9458a41fe33058741f97744f540933f3af274b103bed1c38a2d44a6b6386a89b"
+    },
+    "scraperapi-n8n": {
+      "source": "scraperapi/scraperapi-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scraperapi-n8n/SKILL.md",
+      "computedHash": "59d57129acbcc4bf52c9aaac15c46f9a41b808d77c80cc88063a09a7d5f6a9bb"
+    },
+    "scraperapi-scraper-builder": {
+      "source": "scraperapi/scraperapi-skills",
+      "sourceType": "github",
+      "skillPath": "skills/scraperapi-scraper-builder/SKILL.md",
+      "computedHash": "d2d74407d15a8a33bfe914caff7e4c3cd8ba26e68944aa05f97b910036a4dbd5"
+    },
+    "signal-scanner": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/signal-scanner/SKILL.md",
+      "computedHash": "055eda5020a8ed699e2f464a96e2f84c23d2aa9986c6a65ba677897126e8366d"
+    },
+    "targeted-prospecting": {
+      "source": "gooseworks-ai/goose-skills",
+      "sourceType": "github",
+      "skillPath": "skills/lead-generation/capabilities/targeted-prospecting/SKILL.md",
+      "computedHash": "cbaa210fb593ba902f804758a19a931ffe0ebada51c17afd61b01468197911e0"
     }
   }
 }
