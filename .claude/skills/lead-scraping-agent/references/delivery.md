@@ -3,6 +3,12 @@
 Reference for Layer 5. Delivery is what the client actually touches — get the field mapping and
 gating right, since mistakes here are the most visible to the client.
 
+**Storage note:** until a client's CRM/mail-service integration is actually wired up, `delivery_target`
+and `outbound_injection_threshold` are just fields saved on the `Client Config` tab of the
+client's Google Sheet (see `storage-google-sheets.md`) — no live connection exists yet. The
+gating logic below (5b) still applies once outbound injection goes live; `contact_status` and
+`opted_out` on the `Leads` tab are what it reads.
+
 ---
 
 ## 5a. CRM Field Mappings
@@ -55,12 +61,24 @@ real CRM).
 
 **Gating rule:**
 ```
-[IF: icp_score >= campaign_config.min_icp_score]
+[IF: icp_score >= campaign_config.min_icp_score
+     AND opted_out = FALSE
+     AND email NOT IN Suppression List]
    → true:  [HTTP Request: add to Smartlead/Instantly campaign]
+            → set contact_status = 'messaged', last_contacted_at = now(),
+              message_count += 1
    → false: [route to CRM only, no outbound injection]
 ```
 Never inject unscored or low-score leads into an active sending campaign — a handful of bad
-matches is what tanks sender reputation and deliverability for every future send.
+matches is what tanks sender reputation and deliverability for every future send. The opt-out
+and suppression checks are non-negotiable regardless of score — a high ICP fit does not override
+a prior removal request.
+
+**Handling an opt-out reply:** whatever parses inbound replies (Smartlead/Instantly webhook, or
+a manual inbox check) must, the moment it detects an unsubscribe/removal request, set
+`Leads.opted_out = TRUE` + `opted_out_at = now()` on that row **and** append the email to the
+`Suppression List` tab — the first stops this campaign from re-sending, the second stops any
+future campaign from re-adding the same person.
 
 ---
 

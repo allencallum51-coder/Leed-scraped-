@@ -3,6 +3,10 @@
 Reference for Layer 4. Each subsection below maps directly to the strategies listed in the main
 SKILL.md (4a–4f).
 
+**Storage note:** `scraping_errors` and `source_health` are shown as Supabase tables below; for a
+new client on the Google Sheets default they're the `Scraping Errors` and `Source Health` tabs in
+`storage-google-sheets.md` — same columns, same logic, just Sheets API calls instead of SQL.
+
 ---
 
 ## 4a. Extraction Failure Detection

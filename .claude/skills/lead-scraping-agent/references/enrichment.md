@@ -2,6 +2,11 @@
 
 Reference for Layer 3. This is where raw scraped rows become qualified, contextualized leads.
 
+**Storage note:** examples below use SQL/Supabase table names for precision. For a new client the
+default backend is Google Sheets — `campaign_config` is the `Client Config` tab and
+`leads_enriched` is the `Leads` tab in `storage-google-sheets.md`. The dedup query in 3d has a
+Sheets-native equivalent described there.
+
 ---
 
 ## 3a. Company Enrichment API Setup

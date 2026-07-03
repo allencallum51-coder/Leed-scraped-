@@ -40,6 +40,14 @@ skipping ahead creates debt that breaks self-healing logic downstream.
 Orchestration (n8n / Inngest) wraps all five layers. Each layer is a discrete n8n workflow
 section or sub-workflow so it can be tested, swapped, or healed independently.
 
+**Storage default:** every table referenced below (`leads_raw`, `leads_enriched`,
+`campaign_config`, `scraping_errors`, `source_health`) is written as a Postgres/Supabase schema
+because that's the eventual scale target — but the *default* backing store for a new client is a
+Google Sheet, not Supabase. See `references/storage-google-sheets.md` for the sheet/tab layout
+(including outreach-status and opt-out tracking columns) and the criteria for migrating a client
+from Sheets to Supabase once volume or concurrency demands it. Column names are kept identical
+across both so migration is a lift-and-shift, not a redesign.
+
 ---
 
 ## Layer 1 — Source Selection
