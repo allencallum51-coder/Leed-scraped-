@@ -123,11 +123,10 @@ outbound sequences.
 ## Layer 3 — Enrichment + Scoring
 
 Everything up to this point is plumbing that any scraper could do. Layer 3 is where the
-pipeline earns its price: the LLM — specifically **Fable 5** (model id `claude-fable-5`) —
-turns a flat contact record into a qualified, contextualised lead with a score and a reason
-to reach out.
+pipeline earns its price: the LLM — Claude (`claude-sonnet-4-6`) — turns a flat contact record
+into a qualified, contextualised lead with a score and a reason to reach out.
 
-Fable 5 powers two outputs here: the ICP fit score (a constrained classification task) and the
+Claude powers two outputs here: the ICP fit score (a constrained classification task) and the
 `recommended_angle` field (the one genuinely generative output in an otherwise deterministic
 pipeline — see 3b).
 
@@ -140,7 +139,7 @@ grounding the record in a real firmographic dataset is what makes the ICP score 
 trustworthy.
 
 **3b. ICP fit scoring (LLM)**
-Pass the enriched company record to Fable 5 with a structured system prompt:
+Pass the enriched company record to Claude with a structured system prompt:
 
 ```
 You are an ICP qualification agent. Given a company profile, score it 1–10 for fit against
@@ -160,10 +159,10 @@ Return ONLY valid JSON:
 Note the asymmetry in this prompt: `icp_score`, `fit_reasons`, and `disqualifiers` are
 extractive — they should follow mechanically from the profile and the ICP definition. But
 `recommended_angle` asks the model to make a small creative leap: connect something specific
-about this company to a reason they'd take a call. That leap is why the scoring model is
-Fable 5 specifically — it reasons about *why* a company fits before writing the hook, so the
-angle references the actual fit evidence rather than defaulting to a generic opener. A cheaper
-model can produce the score; the angle is where model quality shows up in reply rates.
+about this company to a reason they'd take a call. That's the field to watch in QA — the JSON
+can validate, the score can look reasonable, and the angle can still be a generic "I noticed
+your company is growing" that could apply to anyone. A good angle cites the same specific
+evidence that drove the score; a lazy one is the tell that the prompt needs tightening.
 
 Store `icp_definition` in a Supabase config table so it can be updated per campaign without
 redeploying the workflow.
@@ -171,7 +170,7 @@ redeploying the workflow.
 **3c. Intent signal detection (optional, high-value)**
 If the source was a job board, extract hiring signals:
 - Role being hired → infer pain point (e.g. "hiring Sales Ops" = scaling sales motion)
-- Job description keywords → pass to Fable 5 to infer the business problem
+- Job description keywords → pass to Claude to infer the business problem
 
 **3d. Deduplication**
 Before writing to the enriched table, check for existing records:
@@ -330,7 +329,7 @@ dispute for the client.
 1. Define ICP with client → store in `campaign_config` Supabase table
 2. Select and configure primary source → test extraction, validate raw schema
 3. Set up email validation → connect ZeroBounce / NeverBounce
-4. Build enrichment workflow → test Fable 5 scoring against 20 known leads
+4. Build enrichment workflow → test Claude scoring against 20 known leads
 5. Build self-healing layer → test failure injection, verify retry + alert logic
 6. Build delivery integration → test CRM push end-to-end with dummy data
 7. Set up health check workflow → confirm daily runs and alerting
@@ -344,7 +343,7 @@ dispute for the client.
 
 - `references/sources.md` — Per-source setup, rate limits, ToS risk levels, recommended tools
 - `references/extraction.md` — Apify configs, Playwright selectors, n8n node patterns
-- `references/enrichment.md` — Fable 5 prompt templates, Clearbit/Hunter setup, scoring rubrics
+- `references/enrichment.md` — Claude prompt templates, Clearbit/Hunter setup, scoring rubrics
 - `references/self-healing.md` — n8n blueprints for retry, DOM healing, health checks
 - `references/delivery.md` — CRM field mappings, Smartlead/Instantly API patterns, dashboard schema
 - `references/storage-google-sheets.md` — Default Google Sheets backend: workbook/tab layout, Sheets-native dedup and suppression, Supabase migration criteria

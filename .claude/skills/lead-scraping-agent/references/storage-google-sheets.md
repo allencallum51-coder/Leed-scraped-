@@ -1,10 +1,12 @@
 # Storage — Google Sheets (Default Backend)
 
-Reference for the default backing store used by a new client's build. Every other reference
-file (`extraction.md`, `enrichment.md`, `self-healing.md`, `delivery.md`) describes tables in
-Postgres/Supabase terms because that's the schema a client migrates to at scale — this file is
-the Google Sheets equivalent to use from day one. Column names match 1:1 across both so migrating
-a client later is copying rows into the equivalent Postgres columns, not redesigning anything.
+Reference for the default backing store used by a new client's build. There's a deliberate
+split-brain in this skill's documentation: every other reference file (`extraction.md`,
+`enrichment.md`, `self-healing.md`, `delivery.md`) describes tables in Postgres/Supabase terms,
+because that's the schema a client eventually migrates to — but the backend a new client
+actually starts on is a Google Sheet. This file is the Sheets side of that split. The contract
+holding it together: **column names match 1:1 across both backends**, so migrating a client
+later means copying rows into identically-named Postgres columns, never redesigning anything.
 
 **One workbook per client**, named `{client_name} — Lead Pipeline`, with five tabs.
 
@@ -12,9 +14,9 @@ a client later is copying rows into the equivalent Postgres columns, not redesig
 
 ## Tab 1 — `Leads`
 
-The merged equivalent of `leads_raw` + `leads_enriched`. Sheets has no benefit from splitting
-raw/enriched into separate physical tables the way Postgres does for write-locking reasons — a
-single `enrichment_status` column does that job instead.
+The merged equivalent of `leads_raw` + `leads_enriched`. Postgres splits raw and enriched into
+separate physical tables for write-locking reasons that simply don't apply to Sheets — so here
+a single `enrichment_status` column does that job on one tab.
 
 | Column | Notes |
 |---|---|
@@ -48,11 +50,11 @@ single `enrichment_status` column does that job instead.
 
 ## Tab 2 — `Suppression List`
 
-A permanent record of every email/domain that has ever opted out, independent of the `Leads` tab.
-The reason this is a separate tab rather than relying on `opted_out` alone: if a lead is later
-removed from `Leads` (e.g. a sheet cleanup) and the same person is re-scraped in a future
-campaign, `Leads.opted_out` alone won't catch it — the Suppression tab is the permanent
-cross-campaign check.
+A permanent record of every email/domain that has ever opted out, independent of the `Leads`
+tab. `Leads.opted_out` alone has a hole in it: delete the row (a sheet cleanup, a fresh
+campaign) and the opt-out disappears with it — and the same person can be re-scraped and
+re-messaged in a future campaign. The Suppression tab is the record that survives everything
+else, which is exactly what an opt-out has to be.
 
 | Column | Notes |
 |---|---|
@@ -106,16 +108,20 @@ Sheets equivalent of self-healing.md §4f.
 
 ## Working With Sheets Instead of SQL
 
+Four places where Sheets genuinely behaves differently from Postgres, and the workaround for
+each:
+
 **Dedup (enrichment.md §3d):** there's no `WHERE website = $1 OR (...)`. Read the full `Leads`
 tab into memory at the start of a run (via `values.get` or a Sheets node's "read all rows"),
 build a lookup keyed on `website` and on `company_name + location`, then check new rows against
 that lookup before appending. At a few thousand rows this is fast; re-evaluate once a single
-client's `Leads` tab approaches the tens of thousands.
+client's `Leads` tab approaches the tens of thousands — that's a migration trigger, not a
+reason to optimize the Sheets path.
 
 **Batching:** the Sheets API is quota-limited (roughly 300 read/write requests per minute per
 project, 60 per user per minute). Use batch operations (`spreadsheets.values.batchGet` /
 `batchUpdate`, or n8n's Google Sheets node in "append/update many" mode) instead of one API call
-per lead.
+per lead — a per-lead call pattern hits the per-user quota at trivially small batch sizes.
 
 **Concurrency:** Sheets has no row-level locking. If more than one workflow could write to the
 same `Leads` tab at the same time (e.g. a scheduled scrape and a manual re-run overlapping),
@@ -123,8 +129,9 @@ serialize writes through a single n8n workflow rather than relying on read-check
 two workflows racing on the same dedup check can both pass the check and insert a duplicate.
 
 **No JSON columns:** anywhere the Postgres schema uses `JSONB` (e.g. `scraping_errors.payload`),
-store a JSON *string* in the Sheets cell and parse it in the workflow when needed, rather than
-trying to flatten it into more columns.
+store a JSON *string* in the Sheets cell and parse it in the workflow when needed. Don't flatten
+it into more columns — the payload's shape varies by source, and a column-per-key layout breaks
+the first time a new source appears.
 
 ---
 
@@ -139,8 +146,8 @@ Move a client from Sheets to Supabase when any of the following starts being tru
   errors, and health — Sheets can back a simple dashboard but not one doing relational joins at
   speed.
 
-Because every column name in this file matches its Postgres counterpart in the other reference
-docs, migration is: create the Supabase tables from the existing schema definitions, then copy
-each Sheets tab's rows into the matching table. No field renaming, no logic changes in the n8n
-workflows beyond swapping the Sheets nodes for Supabase nodes — `storage_backend` in
-`Client Config` is what a workflow reads to know which node path to take.
+The migration itself is the payoff for the 1:1 column-name discipline: create the Supabase
+tables from the existing schema definitions in the other reference docs, then copy each Sheets
+tab's rows into the matching table. No field renaming, no logic changes in the n8n workflows
+beyond swapping the Sheets nodes for Supabase nodes — `storage_backend` in `Client Config` is
+what a workflow reads to know which node path to take.

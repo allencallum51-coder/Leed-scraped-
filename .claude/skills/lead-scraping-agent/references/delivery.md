@@ -1,7 +1,8 @@
 # Delivery Layer — CRM Mappings, Outbound APIs, Dashboard Schema
 
-Reference for Layer 5. Delivery is what the client actually touches — get the field mapping and
-gating right, since mistakes here are the most visible to the client.
+Reference for Layer 5. Delivery is the only layer the client touches, which changes the error
+economics: a bug in extraction costs you a re-run, a bug here costs you credibility. Get the
+field mappings and the gating exactly right before anything goes live.
 
 **Storage note:** until a client's CRM/mail-service integration is actually wired up, `delivery_target`
 and `outbound_injection_threshold` are just fields saved on the `Client Config` tab of the
@@ -27,8 +28,9 @@ gating logic below (5b) still applies once outbound injection goes live; `contac
 | `source` | custom property `lead_source` |
 
 Use the HubSpot API node's **batch upsert** endpoint (`/crm/v3/objects/contacts/batch/upsert`)
-keyed on email, not a per-record Create call — avoids duplicate contact records when a lead is
-re-processed (e.g. `last_seen_at` update from dedup layer).
+keyed on email, not a per-record Create call. The dedup layer legitimately re-processes leads
+(the `last_seen_at` update path), and per-record Creates turn every re-process into a duplicate
+contact in the client's CRM.
 
 **Pipedrive (Create Person + Create Organization):**
 | `leads_enriched` field | Pipedrive field |
@@ -40,14 +42,15 @@ re-processed (e.g. `last_seen_at` update from dedup layer).
 | `icp_score` | custom field, number type |
 | `recommended_angle` | custom field, large text type |
 
-Create the Organization first, capture its `id`, then create the Person with `org_id` set —
-Pipedrive doesn't auto-link on name match.
+Order matters here: create the Organization first, capture its `id`, then create the Person
+with `org_id` set — Pipedrive doesn't auto-link on name match, and unlinked Persons are how a
+CRM quietly rots.
 
 **Airtable (append to base):**
 Simplest option — one row per lead in a base with columns matching `leads_enriched` directly.
-Good for early-stage clients without a CRM yet, or as a lightweight review layer before a CRM
-push (client approves a batch in Airtable, a separate n8n workflow syncs approved rows to the
-real CRM).
+Two situations where it's the right call: early-stage clients who don't have a CRM yet, and as
+a human-review buffer in front of a real CRM (client approves a batch in Airtable, a separate
+n8n workflow syncs approved rows onward).
 
 ---
 
@@ -57,7 +60,8 @@ real CRM).
 - Both expose a "add lead to campaign" API endpoint accepting the lead's email plus custom
   variables for personalization merge tags.
 - Map `recommended_angle` to a custom variable (e.g. `{{icebreaker}}`) referenced in the email
-  sequence templates — this is what makes the LLM enrichment step pay off in the outbound copy.
+  sequence templates. This is the moment the whole Layer 3 investment pays off — the Claude
+  generated hook lands in the first line of the actual email a prospect reads.
 
 **Gating rule:**
 ```
@@ -69,36 +73,44 @@ real CRM).
               message_count += 1
    → false: [route to CRM only, no outbound injection]
 ```
-Never inject unscored or low-score leads into an active sending campaign — a handful of bad
-matches is what tanks sender reputation and deliverability for every future send. The opt-out
-and suppression checks are non-negotiable regardless of score — a high ICP fit does not override
-a prior removal request.
+
+Three checks, two different reasons:
+
+- The **score gate** protects sender reputation. A handful of obviously-bad matches in an
+  active sequence is what earns spam reports, and spam reports tank deliverability for every
+  future send. Unscored or low-score leads go to the CRM, never into a live campaign.
+- The **opt-out and suppression checks** are compliance, not optimization — they are
+  non-negotiable regardless of score. A 10/10 ICP fit does not override a prior removal
+  request.
 
 **Handling an opt-out reply:** whatever parses inbound replies (Smartlead/Instantly webhook, or
-a manual inbox check) must, the moment it detects an unsubscribe/removal request, set
-`Leads.opted_out = TRUE` + `opted_out_at = now()` on that row **and** append the email to the
-`Suppression List` tab — the first stops this campaign from re-sending, the second stops any
-future campaign from re-adding the same person.
+a manual inbox check) must, the moment it detects an unsubscribe/removal request, do both of:
+set `Leads.opted_out = TRUE` + `opted_out_at = now()` on that row, **and** append the email to
+the `Suppression List` tab. They cover different failure modes — the row flag stops this
+campaign from re-sending; the suppression entry stops any future campaign from re-adding the
+same person after the row is gone.
 
 ---
 
 ## 5c. Dashboard
 
 Minimal Next.js + Supabase dashboard reading directly from the same tables the pipeline writes
-to (`leads_enriched`, `scraping_errors`, `source_health`).
+to (`leads_enriched`, `scraping_errors`, `source_health`) — no separate analytics store to keep
+in sync.
 
 **Pages / widgets:**
 - **Lead volume over time** — daily count from `leads_enriched.created_at`, line chart.
 - **Source breakdown** — count grouped by `source`, bar or donut chart.
 - **ICP score distribution** — histogram of `icp_score` across current campaign.
-- **Enrichment coverage %** — `count(enriched) / count(leads_raw)` — flags if the enrichment
-  layer is silently falling behind extraction volume.
+- **Enrichment coverage %** — `count(enriched) / count(leads_raw)` — the early-warning metric;
+  a falling ratio means the enrichment layer is silently losing ground to extraction volume.
 - **Self-healing alerts** — recent rows from `scraping_errors` where `resolved = false`, and the
   latest `source_health` pass/fail per source.
 
 Use Supabase's client library directly from Next.js server components with row-level security
 scoped to the client's `campaign_id` if the dashboard will ever serve more than one client from
-the same Supabase project.
+the same Supabase project. Retrofit RLS later and you'll be auditing every query instead of
+writing one policy.
 
 ---
 
@@ -119,6 +131,7 @@ yet, or a procurement delay blocks API access).
 [Supabase Update: mark delivered = true]
 ```
 
-Communicate clearly to the client that this is a stopgap — the pitch for upgrading to CRM
-delivery (5a) is that a CSV in an inbox never gets touched by the sales team the way a native CRM
-record does.
+Frame it to the client as a stopgap from day one, and keep the CRM upgrade (5a) on the table.
+The honest pitch: a CSV in an inbox gets opened once and forgotten; a native CRM record sits in
+the sales team's working view every day. Same leads, very different usage — and usage is what
+gets the engagement renewed.

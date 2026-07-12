@@ -1,7 +1,9 @@
 # Self-Healing Layer — n8n Blueprints
 
-Reference for Layer 4. Each subsection below maps directly to the strategies listed in the main
-SKILL.md (4a–4f).
+Reference for Layer 4. Each subsection maps directly to the strategies in the main SKILL.md
+(4a–4f). The organizing idea across all six: a failure the pipeline handles itself is a log
+entry; a failure it can't handle should become a *specific, actionable* alert — never a
+silently empty lead sheet the client notices before you do.
 
 **Storage note:** `scraping_errors` and `source_health` are shown as Supabase tables below; for a
 new client on the Google Sheets default they're the `Scraping Errors` and `Source Health` tabs in
@@ -34,8 +36,10 @@ else errorType = 'dom_change';
 return [{ json: { ...($json), error_type: errorType } }];
 ```
 
-Insert into `scraping_errors` with the full request payload attached — you need it to replay the
-exact failed request once the self-heal branch decides how to remediate.
+Classification is what routes the remediation: `rate_limit` and `timeout` go to the retry
+sub-workflow (4b), `dom_change` goes to selector remediation (4c), `auth_block` almost always
+needs a human. Insert into `scraping_errors` with the full request payload attached — the
+self-heal branch needs it to replay the exact failed request once it decides how to remediate.
 
 ---
 
@@ -55,8 +59,10 @@ Sub-workflow triggered from 4a for `rate_limit` and `timeout` error types:
    3+ → [Slack/Email webhook: alert] → [Supabase: resolved = false]
 ```
 
-Use n8n's **Wait node** (not a `sleep` in Function code — it suspends the workflow execution
-rather than blocking a worker) so retries don't tie up execution slots for hours.
+The widening intervals are deliberate — most rate limits and transient outages clear within
+minutes, but the ones that don't won't be fixed by hammering. Use n8n's **Wait node** for the
+delays, never a `sleep` in Function code: the Wait node suspends the workflow execution rather
+than blocking a worker, so a two-hour backoff doesn't tie up an execution slot for two hours.
 
 ---
 
@@ -76,6 +82,10 @@ rather than blocking a worker) so retries don't tie up execution slots for hours
            → [trigger LLM remediation sub-workflow]
 ```
 
+Pausing the source *before* attempting remediation matters: a scraper running against a changed
+DOM doesn't fail loudly — it quietly extracts garbage, and garbage that reaches the client is
+worse than no data.
+
 **LLM remediation prompt:**
 ```
 The following CSS selector no longer returns expected data from {{url}}.
@@ -85,8 +95,9 @@ Suggest the updated CSS selector that targets the equivalent element.
 Return ONLY the new selector string.
 ```
 
-**Confidence gate:** scan the LLM response for uncertainty language ("might", "possibly",
-"I'm not sure", "unable to determine") before trusting it automatically.
+**Confidence gate:** an LLM asked for a selector will produce *a* selector even when the honest
+answer is "I can't tell from this HTML." Scan the response for uncertainty language before
+trusting it automatically:
 ```js
 const uncertain = /\b(might|possibly|not sure|unable to|cannot determine|unclear)\b/i.test(
   $json.suggested_selector
@@ -105,8 +116,9 @@ return [{ json: { ...$json, requires_human_review: uncertain } }];
 - Configure rotation at the proxy provider level (Bright Data / Oxylabs sticky-session pools or
   rotating pools, depending on whether the target needs session continuity).
 - Store proxy credentials as n8n **credentials**, never hardcoded in HTTP Request nodes or
-  Function code — this also means rotating the credential doesn't require touching every
-  workflow that uses it.
+  Function code. Beyond the security argument, there's an operational one: rotating a credential
+  stored centrally touches one place; rotating a hardcoded one means editing every workflow that
+  uses it.
 - Maintenance workflow (separate, scheduled monthly or per provider's rotation policy):
   ```
   [Schedule Trigger] → [HTTP Request: provider's key-rotation endpoint]
@@ -118,7 +130,8 @@ return [{ json: { ...$json, requires_human_review: uncertain } }];
 ## 4e. Schema Drift Detection
 
 Validate every record against a schema immediately before the `leads_enriched` write — this is
-the last gate before data becomes "real" in the pipeline.
+the last gate before data becomes "real" in the pipeline, and the gate that catches upstream
+API schema changes that didn't throw an error, only changed shape.
 
 ```js
 // Function node, using Zod-equivalent manual checks (or a Zod-in-n8n Code node if available)
@@ -144,11 +157,15 @@ return [{ json: $json }];
    → false: [continue to leads_enriched insert]
 ```
 
+The halt is non-negotiable: a partial record in `leads_enriched` looks deliverable and isn't.
+Better one missing lead and a `schema_errors` row than a half-empty record in the client's CRM.
+
 ---
 
 ## 4f. Health Check Workflow
 
-Runs daily, independent of the main pipeline schedule:
+Runs daily, independent of the main pipeline schedule — independence is the point, since a
+health check embedded in the pipeline can't tell you the pipeline itself stopped firing.
 
 ```
 [Schedule Trigger: daily 06:00]
@@ -175,5 +192,6 @@ CREATE TABLE source_health (
 );
 ```
 
-The daily summary is also the artifact that justifies a self-healing retainer to the client —
-surface it (or a rollup of it) on the dashboard described in delivery.md.
+Don't treat the daily summary as internal-only plumbing. It's the single most concrete artifact
+justifying a self-healing retainer — "here's every day this month your pipeline verified itself"
+is a renewal argument. Surface it (or a rollup of it) on the dashboard described in delivery.md.
