@@ -1,7 +1,9 @@
 # Extraction Layer — Apify Configs, Playwright Selectors, n8n Patterns
 
-Reference for Layer 2. Extraction turns a source's raw response into the flat schema defined in
-the main SKILL.md — nothing more. No scoring, no enrichment API calls here.
+Reference for Layer 2. The discipline of this layer is what it *doesn't* do: no scoring, no
+enrichment API calls, no judgment. It turns a source's raw response into the flat schema defined
+in the main SKILL.md, and stops. Everything clever belongs in Layer 3, where it can be changed
+without re-scraping anything.
 
 ---
 
@@ -9,7 +11,8 @@ the main SKILL.md — nothing more. No scoring, no enrichment API calls here.
 
 **Choosing an actor:**
 - Prefer an existing well-maintained actor over building a custom one — check run count and last
-  update date in the Apify Store before committing.
+  update date in the Apify Store before committing. An actor with thousands of recent runs is an
+  actor someone else is already keeping alive when the target site changes.
 - For LinkedIn, job boards, and most e-commerce/directory sites, an official or community actor
   almost always exists.
 
@@ -28,34 +31,35 @@ the main SKILL.md — nothing more. No scoring, no enrichment API calls here.
 **Running via n8n:**
 - HTTP Request node → `POST https://api.apify.com/v2/acts/{actor_id}/runs?token={API_TOKEN}`
   with the input JSON as the body.
-- Poll `GET /v2/actor-runs/{run_id}` until `status` is `SUCCEEDED`, or better, configure a
+- Poll `GET /v2/actor-runs/{run_id}` until `status` is `SUCCEEDED` — or better, configure a
   webhook on the actor run (`webhooks` param) that POSTs back to an n8n Webhook node on
-  completion — avoids polling entirely.
+  completion, and skip polling entirely.
 - Fetch results: `GET https://api.apify.com/v2/datasets/{dataset_id}/items`.
 
 **Cost control:** Set `maxResults` conservatively per run and track `computeUnits` consumed per
 run in the `scraping_errors`-adjacent metrics table (see self-healing.md) so cost-per-lead is
-visible before scaling a source.
+visible before scaling a source. You can't price a retainer sensibly without this number.
 
 ---
 
 ## Playwright (Custom Scrapers)
 
-Use Playwright only when:
+A full browser is the tool of last resort, not the default. Use Playwright only when:
 - The target renders content client-side (React/Vue SPA with no server-rendered fallback), or
 - The flow requires interaction (search form submission, pagination via "load more" clicks,
   login-gated content).
 
 For everything else, prefer a lighter HTTP + Cheerio/BeautifulSoup approach — it's faster,
-cheaper, and less brittle than a full browser.
+cheaper, and has far fewer moving parts to break.
 
 **Selector strategy:**
 - Prefer stable attributes over generated class names: `data-testid`, `id`, `aria-label`, or
   semantic tags (`<article>`, `<table>`) over `.css-x7y2z1` style hashed classes that change on
   every deploy.
 - Scope selectors to the narrowest reliable container first, then extract fields relative to it,
-  rather than one giant page-wide selector list — this keeps DOM-change breakage isolated to one
-  field instead of the whole record.
+  rather than one giant page-wide selector list. The payoff comes at breakage time: a DOM change
+  takes out one field instead of the whole record, and Layer 4's remediation has a much smaller
+  problem to solve.
 
 ```js
 // Example: extracting a listing card
@@ -72,7 +76,8 @@ for (const card of cards) {
   (`page.waitForSelector`) over a blanket network-idle wait.
 - Route through a residential/datacenter proxy at the browser context level
   (`browser.newContext({ proxy: {...} })`) rather than per-request, so cookies and session state
-  stay consistent with the assigned IP.
+  stay consistent with the assigned IP — a session whose IP changes mid-flow looks exactly like
+  the bot it is.
 
 ---
 
@@ -115,11 +120,15 @@ return items.map(item => ({
 }));
 ```
 
+Note the `?? null` on every field: a missing value should arrive downstream as an explicit
+null, never as `undefined` or an absent key — Layer 4's schema validation (self-healing.md 4e)
+depends on the shape being consistent.
+
 ---
 
 ## Rate Limiting
 
-- Respect the source's own limits first (see sources.md per-source table).
+- The source's own documented limits win (see sources.md per-source table).
 - For custom scrapers with no documented limit, default to 1 request/second per domain and back
   off exponentially on any 429/503 response before retrying (see self-healing.md 4b for the
   n8n-level retry schedule).
@@ -143,5 +152,8 @@ ZeroBounce or NeverBounce before it reaches Layer 3:
               → status == 'catch-all'/'unknown' → flag low_confidence_email = true, continue
 ```
 
-This keeps invalid/risky addresses out of the enrichment LLM calls (saves tokens) and out of any
-downstream outbound sequence (protects sender reputation).
+Two things pay for this step: LLM tokens (no point scoring a lead whose contact route is dead)
+and sender reputation (one spamtrap in an outbound sequence damages deliverability for every
+future send). Note that invalid emails null the field and *continue* — a company can still be a
+good lead with a bad email; the record just can't be injected into outbound until a valid
+contact route exists.

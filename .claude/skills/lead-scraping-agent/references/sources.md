@@ -1,13 +1,16 @@
 # Source Layer — Setup Guides & Rate Limits
 
-Per-source configuration reference for Layer 1. Pick one primary and one fallback source per
-campaign — do not integrate every row on day one.
+Per-source configuration reference for Layer 1. The rule from the main SKILL.md applies
+throughout: one primary source, one fallback, validated end-to-end before anything else gets
+integrated. Every source you add is a new thing that can break, and Layer 4 has to watch all
+of them.
 
 ---
 
 ## Google Maps / Places API
 
-**Best for:** Local businesses, SMBs, service contractors, anything with a physical location.
+**Best for:** Local businesses, SMBs, service contractors — anything where the ICP has a
+physical storefront or service area.
 
 **Setup:**
 1. Enable the Places API in Google Cloud Console, generate an API key, restrict it to Places API
@@ -19,9 +22,9 @@ campaign — do not integrate every row on day one.
 4. Call Place Details for each result to get phone, website, and hours (costs an extra request
    per place — budget accordingly).
 
-**Rate limits:** 6,000 requests/minute default quota (soft, raisable). Real constraint is cost:
-Text Search ~$32/1000 requests, Place Details ~$17/1000 requests (Essentials SKU as of last
-pricing check — verify current pricing before quoting a client).
+**Rate limits:** 6,000 requests/minute default quota (soft, raisable). The quota is never the
+real constraint here — cost is: Text Search ~$32/1000 requests, Place Details ~$17/1000 requests
+(Essentials SKU as of last pricing check — verify current pricing before quoting a client).
 
 **ToS risk:** Low — official API, fully compliant.
 
@@ -32,7 +35,7 @@ pricing check — verify current pricing before quoting a client).
 **Best for:** B2B, role-based targeting, decision-maker discovery.
 
 **Never scrape LinkedIn directly** — no raw HTTP requests, no headless browser hitting
-linkedin.com directly. Use one of:
+linkedin.com directly. The only acceptable routes are:
 
 - **PhantomBuster** — "Phantoms" for Sales Navigator search export, profile scraping, post
   engagement scraping. Runs in PhantomBuster's cloud, rotates through their IP pool.
@@ -48,20 +51,23 @@ linkedin.com directly. Use one of:
 3. Schedule via PhantomBuster's own scheduler or trigger via their API from n8n.
 4. Output lands in PhantomBuster's result store — pull via API into the n8n workflow.
 
-**Rate limits:** Self-imposed — cap searches to what a real human user could plausibly do
-(roughly 80-100 profile views/day per seat). Exceeding this is what triggers bans regardless of
-which proxy layer you use.
+**Rate limits:** Self-imposed, and this is the part people get wrong: cap activity to what a
+real human user could plausibly do (roughly 80-100 profile views/day per seat). The proxy layer
+protects your IP, not your account — exceeding human-plausible volume is what triggers bans
+regardless of which tool sits in between.
 
 **ToS risk:** High even through a proxy layer — LinkedIn's ToS prohibits automated data
-collection outright. Compliant proxy tools reduce ban risk and legal exposure vs. raw scraping,
-but do not eliminate it. Flag this risk explicitly to clients before building on LinkedIn as a
-primary source.
+collection outright. Compliant proxy tools reduce ban risk and legal exposure versus raw
+scraping; they do not eliminate either. Say this to the client explicitly, in writing, before
+building on LinkedIn as a primary source.
 
 ---
 
 ## Job Boards
 
-**Best for:** Companies with active hiring signals (a strong intent proxy).
+**Best for:** Companies with active hiring signals. Hiring is one of the strongest intent
+proxies available — a company hiring for a role is publicly announcing a problem it's trying
+to solve, which is exactly what Layer 3's intent detection (enrichment.md §3c) feeds on.
 
 **Setup:**
 - Apify actors exist for Indeed, LinkedIn Jobs, and Glassdoor (`apify/indeed-scraper`, etc.).
@@ -82,14 +88,14 @@ expose public job feeds) over raw HTML scraping where available.
 
 ## Industry Directories
 
-**Best for:** Niche verticals not well covered by Google Maps or LinkedIn (e.g. licensed
-professionals, trade associations, chamber-of-commerce member lists).
+**Best for:** Niche verticals that Google Maps and LinkedIn cover poorly — licensed
+professionals, trade associations, chamber-of-commerce member lists.
 
 **Setup:**
 - Custom scraper with Cheerio for static directory pages; Playwright only if the directory uses
   client-side rendering or requires interaction (search forms, "load more" buttons).
-- Directories are typically small (hundreds to low thousands of entries) — a single scheduled
-  run per week is usually sufficient rather than continuous polling.
+- Directories are typically small (hundreds to low thousands of entries) and change slowly —
+  a single scheduled run per week beats continuous polling, and is politer to the host.
 
 **Rate limits:** No standard — inspect `robots.txt` first and throttle to a conservative 1
 request/second unless the site states otherwise.
@@ -102,7 +108,8 @@ directories run by professional licensing bodies (some explicitly prohibit bulk 
 ## Company Websites (Tech Stack, Size, Intent Signals)
 
 **Best for:** Enriching a company record once you already have a domain, or confirming firmo-
-graphics scraped from another source.
+graphics scraped from another source. This is an enrichment source, not a discovery source —
+it can't find companies, only tell you more about ones you've found.
 
 **Setup:**
 - **Hunter.io** — Domain Search endpoint returns known email patterns and public email
@@ -121,7 +128,7 @@ monthly lookup credits, not requests/second. Budget credits per campaign volume 
 
 ## Google Search (SERPs)
 
-**Best for:** Broad discovery when you don't have a clean source list yet — "find companies that
+**Best for:** Broad discovery when no clean source list exists yet — "find companies that
 mention X on their homepage," competitor customer lists, press mentions.
 
 **Setup:**
@@ -149,4 +156,5 @@ not raw scrapers hitting google.com.
 | Any — enrichment-only, no discovery | Company websites (Hunter/Clearbit) | N/A |
 
 Expand to a third source only after the primary + fallback pair is validated end-to-end
-(Layer 2 schema conformance, Layer 4 health checks passing for at least one week).
+(Layer 2 schema conformance, Layer 4 health checks passing for at least one week). "Validated"
+means the health checks say so, not that a manual run looked fine once.

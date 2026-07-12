@@ -12,16 +12,22 @@ description: >
 
 # Lead Scraping Agent — Build Skill
 
-A reusable build guide for constructing bespoke lead scraping agents for any niche, ICP, or
-client context. Not tied to a single brand or vertical. Covers the full pipeline from source
-selection through to packaged product delivery.
+This is a build guide, not a script. It describes how to construct a bespoke lead scraping
+agent for any client, niche, or ICP — the same five-layer architecture every time, with the
+client-specific decisions (sources, ICP definition, delivery target) treated as configuration
+rather than rewrites. Nothing here is tied to a single brand or vertical.
+
+The reason it's worth reading end-to-end even when you only need one piece: the layers depend
+on each other in non-obvious ways. Delivery gating reads scores produced in enrichment;
+self-healing replays payloads captured in extraction; enrichment prompts read config written
+during source setup. Build one layer in isolation and you'll usually get its interface wrong.
 
 ---
 
 ## Architecture Overview
 
-A production lead scraping agent has five distinct layers. Build and validate each in order —
-skipping ahead creates debt that breaks self-healing logic downstream.
+Five layers, built and validated in order. Skipping ahead creates debt that surfaces later as
+broken self-healing logic — the layer least fun to debug.
 
 ```
 [1. Source Layer]
@@ -37,23 +43,26 @@ skipping ahead creates debt that breaks self-healing logic downstream.
 [Dashboard / CRM / Webhook]
 ```
 
-Orchestration (n8n / Inngest) wraps all five layers. Each layer is a discrete n8n workflow
-section or sub-workflow so it can be tested, swapped, or healed independently.
+Orchestration (n8n / Inngest) wraps all five. Keep each layer a discrete n8n workflow section
+or sub-workflow — the point is that any one of them can be tested, swapped, or healed without
+touching the others.
 
-**Storage default:** every table referenced below (`leads_raw`, `leads_enriched`,
-`campaign_config`, `scraping_errors`, `source_health`) is written as a Postgres/Supabase schema
-because that's the eventual scale target — but the *default* backing store for a new client is a
-Google Sheet, not Supabase. See `references/storage-google-sheets.md` for the sheet/tab layout
-(including outreach-status and opt-out tracking columns) and the criteria for migrating a client
-from Sheets to Supabase once volume or concurrency demands it. Column names are kept identical
-across both so migration is a lift-and-shift, not a redesign.
+**Storage default — read this before touching any schema below.** Every table in this guide
+(`leads_raw`, `leads_enriched`, `campaign_config`, `scraping_errors`, `source_health`) is
+written as a Postgres/Supabase schema, because Supabase is the eventual scale target. But the
+*default* backing store for a new client is a Google Sheet, not Supabase. See
+`references/storage-google-sheets.md` for the sheet/tab layout (including outreach-status and
+opt-out tracking columns) and the criteria for migrating a client from Sheets to Supabase once
+volume or concurrency demands it. Column names are deliberately identical across both backends,
+so migration is a lift-and-shift, not a redesign.
 
 ---
 
 ## Layer 1 — Source Selection
 
-Choose sources based on the ICP. Do not try to scrape all sources simultaneously — start with
-one primary and one fallback, then expand.
+Sources follow from the ICP, not the other way around. Resist the urge to integrate everything
+on day one: start with one primary and one fallback source, validate the pair end-to-end, and
+only then expand.
 
 | Source Type         | Best For                          | Tool / Method                        | Risk Level |
 |---------------------|-----------------------------------|--------------------------------------|------------|
@@ -64,9 +73,10 @@ one primary and one fallback, then expand.
 | Company websites    | Tech stack, size, intent signals  | Hunter.io, Clearbit, BuiltWith API   | Low        |
 | Google Search (SERPs)| Broad discovery                  | SerpAPI, ValueSERP                   | Low        |
 
-**LinkedIn rule:** Never scrape LinkedIn directly. Always use a compliant proxy layer
-(PhantomBuster cloud, Bright Data's LinkedIn dataset, or Apify's LinkedIn actors). Raw scraping
-triggers permanent IP bans within hours and creates legal exposure under LinkedIn's ToS.
+**The LinkedIn rule is absolute:** never scrape LinkedIn directly. Always go through a
+compliant proxy layer (PhantomBuster cloud, Bright Data's LinkedIn dataset, or Apify's LinkedIn
+actors). Raw scraping earns permanent IP bans within hours and creates legal exposure under
+LinkedIn's ToS — there is no volume of leads worth that.
 
 → See `references/sources.md` for per-source setup guides and rate limits.
 
@@ -74,8 +84,9 @@ triggers permanent IP bans within hours and creates legal exposure under LinkedI
 
 ## Layer 2 — Extraction
 
-Extraction pulls raw structured data from the chosen source. Output at this stage should be
-a clean, flat JSON object per lead — no enrichment yet.
+Extraction has exactly one job: turn a source's raw response into a clean, flat JSON object
+per lead. No enrichment, no scoring, no API calls beyond the source itself. Keeping this layer
+dumb is what makes it swappable when a source breaks.
 
 **Minimum required fields per raw lead:**
 ```json
@@ -100,9 +111,10 @@ a clean, flat JSON object per lead — no enrichment yet.
 - Set node → tag `source` and `scraped_at`
 - Write to Supabase `leads_raw` table
 
-**Email extraction:** Never rely solely on scraped emails. Pass all emails through a validation
-API (ZeroBounce or NeverBounce) before enrichment. Invalid/risky emails add noise and hurt
-deliverability if leads feed into outbound sequences.
+**Email extraction:** scraped emails are guesses until proven otherwise. Pass every one through
+a validation API (ZeroBounce or NeverBounce) before enrichment. Invalid or risky addresses cost
+twice — once as noise in the pipeline, and again as deliverability damage if leads feed into
+outbound sequences.
 
 → See `references/extraction.md` for Apify actor configs, Playwright selectors, and rate limiting.
 
@@ -110,18 +122,25 @@ deliverability if leads feed into outbound sequences.
 
 ## Layer 3 — Enrichment + Scoring
 
-This is where the LLM (Claude claude-sonnet-4-6) adds value that raw scraping cannot. The enrichment
-layer transforms a flat contact record into a qualified, contextualised lead.
+Everything up to this point is plumbing that any scraper could do. Layer 3 is where the
+pipeline earns its price: the LLM — specifically **Fable 5** (model id `claude-fable-5`) —
+turns a flat contact record into a qualified, contextualised lead with a score and a reason
+to reach out.
+
+Fable 5 powers two outputs here: the ICP fit score (a constrained classification task) and the
+`recommended_angle` field (the one genuinely generative output in an otherwise deterministic
+pipeline — see 3b).
 
 ### Enrichment steps (in order):
 
 **3a. Company enrichment**
 Call Clearbit Enrichment API or Hunter.io Company API to fill in missing firmographics
-(headcount, revenue range, tech stack, social profiles). This reduces reliance on scraped
-estimates and improves ICP scoring accuracy.
+(headcount, revenue range, tech stack, social profiles). Scraped estimates are unreliable;
+grounding the record in a real firmographic dataset is what makes the ICP score in 3b
+trustworthy.
 
 **3b. ICP fit scoring (LLM)**
-Pass the enriched company record to Claude with a structured system prompt:
+Pass the enriched company record to Fable 5 with a structured system prompt:
 
 ```
 You are an ICP qualification agent. Given a company profile, score it 1–10 for fit against
@@ -138,13 +157,21 @@ Return ONLY valid JSON:
 }
 ```
 
+Note the asymmetry in this prompt: `icp_score`, `fit_reasons`, and `disqualifiers` are
+extractive — they should follow mechanically from the profile and the ICP definition. But
+`recommended_angle` asks the model to make a small creative leap: connect something specific
+about this company to a reason they'd take a call. That leap is why the scoring model is
+Fable 5 specifically — it reasons about *why* a company fits before writing the hook, so the
+angle references the actual fit evidence rather than defaulting to a generic opener. A cheaper
+model can produce the score; the angle is where model quality shows up in reply rates.
+
 Store `icp_definition` in a Supabase config table so it can be updated per campaign without
 redeploying the workflow.
 
 **3c. Intent signal detection (optional, high-value)**
 If the source was a job board, extract hiring signals:
 - Role being hired → infer pain point (e.g. "hiring Sales Ops" = scaling sales motion)
-- Job description keywords → pass to Claude to infer the business problem
+- Job description keywords → pass to Fable 5 to infer the business problem
 
 **3d. Deduplication**
 Before writing to the enriched table, check for existing records:
@@ -161,9 +188,10 @@ If match found → update `last_seen_at` and skip. Do not create duplicate rows.
 
 ## Layer 4 — Self-Healing
 
-Self-healing is what separates a production lead agent from a one-off scraper. Scrapers break.
-Sites change their DOM. APIs update their schemas. Anti-bot measures rotate. A self-healing
-agent detects, logs, adapts, and alerts — without requiring manual intervention for every failure.
+A scraper that works today is a scraper that will break — DOMs change, APIs revise their
+schemas, anti-bot measures rotate. Self-healing is the difference between a product and a
+one-off script: the agent detects, logs, adapts, and alerts, so a failure becomes a log entry
+instead of a support call.
 
 ### Self-Healing Strategies
 
@@ -237,8 +265,8 @@ Create a dedicated n8n workflow that runs daily:
 
 ## Layer 5 — Delivery
 
-Delivery is what makes this a product rather than a data dump. The client should never
-interact with raw data.
+Nobody buys a database. Delivery is the layer that turns pipeline output into something the
+client's sales team actually uses — the client should never have to touch raw data.
 
 ### Delivery options (choose based on client context):
 
@@ -272,7 +300,8 @@ and deliver via email. This is the lowest-value delivery option — use only as 
 
 ## Packaging as a Sellable Product
 
-Raw data is a commodity. Package these components to create defensible value:
+A list of leads is a commodity; the pipeline that keeps producing them is not. Every component
+below exists to move the engagement from "bought a list once" to "pays a retainer":
 
 | Component | What It Provides | Why It Matters for Pricing |
 |-----------|-----------------|---------------------------|
@@ -290,8 +319,9 @@ Raw data is a commodity. Package these components to create defensible value:
   monitoring, and a monthly health review. Price by lead volume tier.
 - **Overage:** Per-lead fee above the committed monthly volume.
 
-Do not sell on a per-lead-only basis without a monthly minimum — yield fluctuations
-from scraper breakage make this unsustainable.
+Do not sell per-lead-only without a monthly minimum. Scraper yield fluctuates when sources
+break, and a pure per-lead price makes every breakage a revenue event for you and a billing
+dispute for the client.
 
 ---
 
@@ -300,7 +330,7 @@ from scraper breakage make this unsustainable.
 1. Define ICP with client → store in `campaign_config` Supabase table
 2. Select and configure primary source → test extraction, validate raw schema
 3. Set up email validation → connect ZeroBounce / NeverBounce
-4. Build enrichment workflow → test Claude scoring against 20 known leads
+4. Build enrichment workflow → test Fable 5 scoring against 20 known leads
 5. Build self-healing layer → test failure injection, verify retry + alert logic
 6. Build delivery integration → test CRM push end-to-end with dummy data
 7. Set up health check workflow → confirm daily runs and alerting
@@ -314,9 +344,10 @@ from scraper breakage make this unsustainable.
 
 - `references/sources.md` — Per-source setup, rate limits, ToS risk levels, recommended tools
 - `references/extraction.md` — Apify configs, Playwright selectors, n8n node patterns
-- `references/enrichment.md` — Claude prompt templates, Clearbit/Hunter setup, scoring rubrics
+- `references/enrichment.md` — Fable 5 prompt templates, Clearbit/Hunter setup, scoring rubrics
 - `references/self-healing.md` — n8n blueprints for retry, DOM healing, health checks
 - `references/delivery.md` — CRM field mappings, Smartlead/Instantly API patterns, dashboard schema
+- `references/storage-google-sheets.md` — Default Google Sheets backend: workbook/tab layout, Sheets-native dedup and suppression, Supabase migration criteria
 
 ---
 
